@@ -1,0 +1,52 @@
+name: PR Review Automation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  pr_monitoring:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests (Pytest)
+      run: |
+        pytest > result.log || true
+        tail -n 10 result.log  # Display last 10 lines of test results
+
+    - name: Calculate review time
+      id: review_time
+      run: |
+        CHANGED_FILES=$(jq '.files | length' < $GITHUB_EVENT_PATH)
+        REVIEW_TIME=$((CHANGED_FILES * 2))  # Assuming 2 minutes per file
+        echo "Estimated review time: $REVIEW_TIME minutes"
+        echo "::set-output name=review_time::$REVIEW_TIME"
+
+    - name: Get commit authors and lines changed
+      id: commit_info
+      run: |
+        COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits -q ".commits")
+        AUTHOR_LINES=()
+        for commit in $(echo "$COMMITS" | jq -r '.[].author.login'); do
+          AUTHOR_LINES[$commit]=${AUTHOR_LINES[$commit]:-0}
+          AUTHOR_LINES[$commit]=$((AUTHOR_LINES[$commit] + 1))
+        done
+        MOST_EXPERT=$(for author in "${!AUTHOR_LINES[@]}"; do echo "$author ${AUTHOR_LINES[$author]}"; done | sort -k2 -n | tail -n 1 | cut -d' ' -f1)
+        echo "::set-output name=most_expert::$MOST_EXPERT"
+
+    - name: Post PR comments
+      run: |
+        gh pr comment ${{ github.event.pull_request.number }} --body "Test results: PASS/FAIL. Most knowledgeable: ${{ steps.commit_info.outputs.most_expert }}. Estimated review time: ${{ steps.review_time.outputs.review_time }} minutes."
