@@ -1,0 +1,28 @@
+# .github/workflows/review_time_only.yaml
+name: Calculate Review Time
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  calculate_review_time:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Estimate review time
+      id: review_time
+      run: |
+        # Count the number of changed files in the pull request
+        CHANGED_FILES=$(jq '.files | length' < $GITHUB_EVENT_PATH)
+        # Assuming 2 minutes per file for review time
+        REVIEW_TIME=$((CHANGED_FILES * 2))
+        echo "Estimated review time: $REVIEW_TIME minutes"
+        echo "::set-output name=review_time::$REVIEW_TIME"
+
+    - name: Output review time
+      run: |
+        echo "The estimated review time is: ${{ steps.review_time.outputs.review_time }} minutes."
