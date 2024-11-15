@@ -38,6 +38,8 @@ jobs:
     - name: Get commit authors and lines changed
       id: commit_info
       run: |
+        export GH_TOKEN=${{ github.token }}
+        
         COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits -q ".commits")
         AUTHOR_LINES=()
         for commit in $(echo "$COMMITS" | jq -r '.[].author.login'); do
