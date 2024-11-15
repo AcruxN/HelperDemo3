@@ -1,5 +1,5 @@
-# .github/workflows/python_workflow.yaml
-name: PR Review Automation
+# .github/workflows/review_time_and_assigner.yaml
+name: Estimate Review Time and Assign Reviewer
 
 on:
   pull_request:
@@ -13,16 +13,27 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-
-    - name: Install dependencies
+    - name: Estimate review time
+      id: review_time
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        # Count the number of changed files in the pull request
+        CHANGED_FILES=$(jq '.files | length' < $GITHUB_EVENT_PATH)
+        # Assuming 2 minutes per file for review time
+        REVIEW_TIME=$((CHANGED_FILES * 2))
+        echo "Estimated review time: $REVIEW_TIME minutes"
+        echo "::set-output name=review_time::$REVIEW_TIME"
 
-    - name: Run basic Python script
+    - name: Assign reviewer based on estimated time
       run: |
-        python print.py 
+        # Simple logic to assign reviewers based on review time
+        if [ "${{ steps.review_time.outputs.review_time }}" -le 10 ]; then
+          REVIEWER="reviewer1"  # Replace with actual GitHub username
+        elif [ "${{ steps.review_time.outputs.review_time }}" -le 20 ]; then
+          REVIEWER="reviewer2"  # Replace with actual GitHub username
+        else
+          REVIEWER="reviewer3"  # Replace with actual GitHub username
+        fi
+        echo "Assigning reviewer: $REVIEWER"
+
+        # Use GitHub CLI to assign the reviewer
+        gh pr review --add $REVIEWER ${{ github.event.pull_request.number }}
