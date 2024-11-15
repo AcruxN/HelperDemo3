@@ -1,5 +1,5 @@
-# .github/workflows/review_time_and_assigner.yaml
-name: Estimate Review Time and Assign Reviewer
+# .github/workflows/nodejs_workflow.yaml
+name: PR Review Automation
 
 on:
   pull_request:
@@ -13,27 +13,40 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v3
 
-    - name: Estimate review time
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+
+    - name: Install dependencies
+      run: |
+        npm install
+
+    - name: Run tests (Jest)
+      run: |
+        npm test -- --ci --reporters=default --reporters=jest-stare
+        # Or if using Jest CLI: jest --ci --reporters=default --reporters=jest-stare
+
+    - name: Calculate review time
       id: review_time
       run: |
-        # Count the number of changed files in the pull request
         CHANGED_FILES=$(jq '.files | length' < $GITHUB_EVENT_PATH)
-        # Assuming 2 minutes per file for review time
-        REVIEW_TIME=$((CHANGED_FILES * 2))
+        REVIEW_TIME=$((CHANGED_FILES * 2))  # Assuming 2 minutes per file
         echo "Estimated review time: $REVIEW_TIME minutes"
         echo "::set-output name=review_time::$REVIEW_TIME"
 
-    - name: Assign reviewer based on estimated time
+    - name: Get commit authors and lines changed
+      id: commit_info
       run: |
-        # Simple logic to assign reviewers based on review time
-        if [ "${{ steps.review_time.outputs.review_time }}" -le 10 ]; then
-          REVIEWER="reviewer1"  # Replace with actual GitHub username
-        elif [ "${{ steps.review_time.outputs.review_time }}" -le 20 ]; then
-          REVIEWER="reviewer2"  # Replace with actual GitHub username
-        else
-          REVIEWER="reviewer3"  # Replace with actual GitHub username
-        fi
-        echo "Assigning reviewer: $REVIEWER"
+        COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits -q ".commits")
+        AUTHOR_LINES=()
+        for commit in $(echo "$COMMITS" | jq -r '.[].author.login'); do
+          AUTHOR_LINES[$commit]=${AUTHOR_LINES[$commit]:-0}
+          AUTHOR_LINES[$commit]=$((AUTHOR_LINES[$commit] + 1))
+        done
+        MOST_EXPERT=$(for author in "${!AUTHOR_LINES[@]}"; do echo "$author ${AUTHOR_LINES[$author]}"; done | sort -k2 -n | tail -n 1 | cut -d' ' -f1)
+        echo "::set-output name=most_expert::$MOST_EXPERT"
 
-        # Use GitHub CLI to assign the reviewer
-        gh pr review --add $REVIEWER ${{ github.event.pull_request.number }}
+    - name: Post PR comments
+      run: |
+        gh pr comment ${{ github.event.pull_request.number }} --body "Test results: PASS/FAIL. Most knowledgeable: ${{ steps.commit_info.outputs.most_expert }}. Estimated review time: ${{ steps.review_time.outputs.review_time }} minutes."
